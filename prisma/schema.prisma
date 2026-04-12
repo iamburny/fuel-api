@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // Dev: file:./fuel.db  |  Prod: postgresql://user:pass@host/dbname
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Station {
+  id           Int      @id @default(autoincrement())
+  govId        String   @unique @map("gov_id")
+  name         String
+  brand        String?
+  operator     String?
+  addressLine1 String?  @map("address_line1")
+  addressLine2 String?  @map("address_line2")
+  town         String?
+  county       String?
+  postcode     String?
+  latitude     Float
+  longitude    Float
+  amenities    String?  // JSON string
+  openingHours String?  @map("opening_hours") // JSON string
+  lastUpdated  DateTime @default(now()) @map("last_updated")
+
+  prices       FuelPrice[]
+  priceHistory PriceHistory[]
+  favourites   Favourite[]
+  discrepancies DiscrepancyReport[]
+
+  @@index([latitude, longitude])
+  @@index([postcode])
+  @@map("stations")
+}
+
+model FuelPrice {
+  id         Int      @id @default(autoincrement())
+  stationId  Int      @map("station_id")
+  fuelType   String   @map("fuel_type") // E10, E5, B7, SDV, B10, HVO
+  pricePence Float    @map("price_pence")
+  reportedAt DateTime @map("reported_at")
+  fetchedAt  DateTime @default(now()) @map("fetched_at")
+
+  station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@unique([stationId, fuelType])
+  @@index([fuelType, pricePence])
+  @@map("fuel_prices")
+}
+
+model PriceHistory {
+  id         Int      @id @default(autoincrement())
+  stationId  Int      @map("station_id")
+  fuelType   String   @map("fuel_type")
+  pricePence Float    @map("price_pence")
+  reportedAt DateTime @map("reported_at")
+  fetchedAt  DateTime @default(now()) @map("fetched_at")
+
+  station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@index([stationId, fuelType, reportedAt])
+  @@index([fuelType, reportedAt])
+  @@map("price_history")
+}
+
+model User {
+  id             Int      @id @default(autoincrement())
+  email          String   @unique
+  hashedPassword String   @map("hashed_password")
+  fcmToken       String?  @map("fcm_token")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  favourites Favourite[]
+
+  @@map("users")
+}
+
+model Favourite {
+  id                  Int      @id @default(autoincrement())
+  userId              Int      @map("user_id")
+  stationId           Int      @map("station_id")
+  notifyOnDrop        Boolean  @default(true) @map("notify_on_drop")
+  fuelType            String   @default("E10") @map("fuel_type")
+  priceThresholdPence Float?   @map("price_threshold_pence")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, stationId])
+  @@map("favourites")
+}
+
+// ── Compliance models ────────────────────────────────────
+
+model ApiCallLog {
+  id              Int      @id @default(autoincrement())
+  endpoint        String
+  calledAt        DateTime @default(now()) @map("called_at")
+  recordsReturned Int      @default(0) @map("records_returned")
+  success         Boolean  @default(true)
+  errorMessage    String?  @map("error_message")
+
+  @@index([calledAt])
+  @@map("api_call_log")
+}
+
+model DiscrepancyReport {
+  id                    Int       @id @default(autoincrement())
+  stationId             Int?      @map("station_id")
+  fuelType              String?   @map("fuel_type")
+  reportedPricePence    Float?    @map("reported_price_pence")
+  expectedPricePence    Float?    @map("expected_price_pence")
+  description           String
+  reporterEmail         String?   @map("reporter_email")
+  forwardedToAggregator Boolean   @default(false) @map("forwarded_to_aggregator")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  resolvedAt            DateTime? @map("resolved_at")
+
+  station Station? @relation(fields: [stationId], references: [id], onDelete: SetNull)
+
+  @@map("discrepancy_reports")
+}

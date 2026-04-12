@@ -32,7 +32,7 @@ class FuelFinderClient {
       throw new Error(`Token request failed (${res.status}): ${text}`);
     }
 
-    const body = await res.json();
+    const body: any = await res.json();
     const tokenData = body?.data;
     if (!tokenData?.access_token) {
       throw new Error(`Token response missing access_token: ${JSON.stringify(body)}`);

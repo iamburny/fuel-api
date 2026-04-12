@@ -13,7 +13,9 @@ export function verifyPassword(plain: string, hashed: string): Promise<boolean> 
 }
 
 export function createToken(userId: number): string {
-  return jwt.sign({ sub: userId }, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN });
+  return jwt.sign({ sub: userId }, env.JWT_SECRET as jwt.Secret, {
+    expiresIn: env.JWT_EXPIRES_IN,
+  } as jwt.SignOptions);
 }
 
 /**
@@ -28,7 +30,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   }
 
   try {
-    const payload = jwt.verify(header.slice(7), env.JWT_SECRET) as { sub: number };
+    const payload = jwt.verify(header.slice(7), env.JWT_SECRET) as unknown as { sub: number };
     const user = await prisma.user.findUnique({ where: { id: payload.sub } });
     if (!user) {
       res.status(401).json({ detail: "User not found" });

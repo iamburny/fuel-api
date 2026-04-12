@@ -1,11 +1,14 @@
 {
-	"folders": [
-		{
-			"path": "."
-		},
-		{
-			"path": "../fuel-web"
-		}
-	],
-  "settings": {}
+  "folders": [
+    {
+      "path": ".",
+    },
+    {
+      "path": "../fuel-web",
+    },
+    {
+      "path": "../fuel-android",
+    },
+  ],
+  "settings": {},
 }

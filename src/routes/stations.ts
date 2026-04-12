@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../db";
 import { findNearbyStations } from "../services/geo";
+import { stationDto, priceDto } from "../dto";
 
 const router = Router();
 
@@ -10,7 +11,7 @@ router.get("/nearby", async (req: Request, res: Response) => {
   const lng = Number(req.query.lng);
   const radius = Number(req.query.radius) || 10;
   const fuelType = (req.query.fuel_type as string) || undefined;
-  const limit = Math.min(Number(req.query.limit) || 20, 100);
+  const limit = Math.min(Number(req.query.limit) || 20, 500);
 
   if (isNaN(lat) || isNaN(lng)) {
     res.status(400).json({ detail: "lat and lng are required" });
@@ -79,30 +80,5 @@ router.get("/:id", async (req: Request, res: Response) => {
     prices: station.prices.map(priceDto),
   });
 });
-
-// ── DTO helpers ──────────────────────────────────────
-
-function stationDto(s: any) {
-  return {
-    id: s.id,
-    gov_id: s.govId,
-    name: s.name,
-    brand: s.brand,
-    operator: s.operator,
-    address_line1: s.addressLine1,
-    town: s.town,
-    postcode: s.postcode,
-    latitude: s.latitude,
-    longitude: s.longitude,
-  };
-}
-
-function priceDto(p: any) {
-  return {
-    fuel_type: p.fuelType,
-    price_pence: p.pricePence,
-    reported_at: p.reportedAt,
-  };
-}
 
 export default router;

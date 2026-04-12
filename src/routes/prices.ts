@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { prisma } from "../db";
 import { findCheapest } from "../services/geo";
 import { complianceFooter } from "../services/compliance";
+import { stationDto } from "../dto";
 
 const router = Router();
 
@@ -11,7 +12,7 @@ router.get("/cheapest", async (req: Request, res: Response) => {
   const lat = req.query.lat ? Number(req.query.lat) : undefined;
   const lng = req.query.lng ? Number(req.query.lng) : undefined;
   const radius = Number(req.query.radius) || 10;
-  const limit = Math.min(Number(req.query.limit) || 10, 50);
+  const limit = Math.min(Number(req.query.limit) || 10, 500);
 
   const results = await findCheapest(fuelType, lat, lng, radius, limit);
 
@@ -111,22 +112,5 @@ router.get("/trends", async (req: Request, res: Response) => {
 
   res.json({ trend, ...complianceFooter() });
 });
-
-// ── DTO helper ───────────────────────────────────────
-
-function stationDto(s: any) {
-  return {
-    id: s.id,
-    gov_id: s.govId,
-    name: s.name,
-    brand: s.brand,
-    operator: s.operator,
-    address_line1: s.addressLine1,
-    town: s.town,
-    postcode: s.postcode,
-    latitude: s.latitude,
-    longitude: s.longitude,
-  };
-}
 
 export default router;

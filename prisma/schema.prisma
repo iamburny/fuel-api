@@ -14,6 +14,10 @@ model Station {
   name         String
   brand        String?
   operator     String?
+  phone        String?
+  temporaryClosure Boolean @default(false) @map("temporary_closure")
+  isMotorway       Boolean @default(false) @map("is_motorway")
+  isSupermarket    Boolean @default(false) @map("is_supermarket")
   addressLine1 String?  @map("address_line1")
   addressLine2 String?  @map("address_line2")
   town         String?

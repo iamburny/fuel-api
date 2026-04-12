@@ -3,7 +3,7 @@ import { prisma } from "../db";
 const EARTH_RADIUS_MILES = 3958.8;
 
 /** Haversine distance in miles between two lat/lng points. */
-function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
+export function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
   const dLng = toRad(lng2 - lng1);
@@ -14,7 +14,7 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
 }
 
 /** Rough bounding box for a radius (degrees). */
-function boundingBox(lat: number, lng: number, radiusMiles: number) {
+export function boundingBox(lat: number, lng: number, radiusMiles: number) {
   const dLat = radiusMiles / 69.0;
   const dLng = radiusMiles / (69.0 * Math.cos((lat * Math.PI) / 180));
   return {

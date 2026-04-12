@@ -7,9 +7,10 @@ services:
   db:
     image: postgres:17-alpine
     container_name: fuel-db
+    env_file:
+      - .env.production
     environment:
       POSTGRES_USER: fuel
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: fueldb
     volumes:
       - fuel-pgdata:/var/lib/postgresql/data
@@ -34,7 +35,6 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=8000
-      - DATABASE_URL=postgresql://fuel:${POSTGRES_PASSWORD}@fuel-db:5432/fueldb
     ports:
       - "8200:8000"
     restart: always

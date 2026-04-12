@@ -1,0 +1,56 @@
+networks:
+  home:
+    name: home
+    external: true
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: fuel-db
+    environment:
+      POSTGRES_USER: fuel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: fueldb
+    volumes:
+      - fuel-pgdata:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    restart: always
+    networks:
+      - home
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fuel -d fueldb"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fuel-api
+    env_file:
+      - .env.production
+    environment:
+      - NODE_ENV=production
+      - PORT=8000
+      - DATABASE_URL=postgresql://fuel:${POSTGRES_PASSWORD}@fuel-db:5432/fueldb
+    ports:
+      - "8200:8000"
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - home
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=home"
+      - "traefik.http.routers.fuel-api.entrypoints=https"
+      - "traefik.http.routers.fuel-api.rule=Host(`api.fueltracker.uk`)"
+      - "traefik.http.routers.fuel-api.tls=true"
+      - "traefik.http.routers.fuel-api.tls.certresolver=myresolver"
+      - "traefik.http.services.fuel-api.loadbalancer.server.port=8000"
+
+volumes:
+  fuel-pgdata:

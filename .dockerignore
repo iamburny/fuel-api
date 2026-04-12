@@ -1,0 +1,7 @@
+node_modules
+dist
+.next
+.env
+prisma/fuel.db
+*.tsbuildinfo
+.git

@@ -6,11 +6,13 @@ FROM base AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-COPY prisma ./prisma
-# Switch Prisma provider to PostgreSQL for production
-RUN sed -i 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma
-RUN npx prisma generate
 COPY . .
+# Switch Prisma provider to PostgreSQL for production. Must run after `COPY . .`, not before —
+# an earlier COPY . . here would silently overwrite this sed'd schema.prisma with the original
+# sqlite version from the build context, since prisma/ isn't excluded from that copy.
+RUN sed -i 's/provider = "sqlite"/provider = "postgresql"/' prisma/schema.prisma
+RUN grep -q 'provider = "postgresql"' prisma/schema.prisma || (echo "sed failed to switch Prisma provider to postgresql" >&2 && exit 1)
+RUN npx prisma generate
 RUN npm run build
 
 # --- Production stage ---

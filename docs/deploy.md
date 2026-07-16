@@ -41,11 +41,14 @@ Edit `.env.production`:
 
 ```env
 POSTGRES_PASSWORD=<strong-random-password>
+DATABASE_URL=postgresql://fuel:<same-password-as-above>@fuel-db:5432/fueldb
 FUEL_FINDER_CLIENT_ID=<your-client-id>
 FUEL_FINDER_CLIENT_SECRET=<your-client-secret>
 POLL_INTERVAL_MINUTES=30
 JWT_SECRET=<long-random-string>
 ```
+
+`DATABASE_URL` must be set explicitly here and kept in sync with `POSTGRES_PASSWORD` — it is **not** derived automatically from anything in `docker-compose.yml`.
 
 Build and start:
 
@@ -170,6 +173,12 @@ curl -X POST https://api.fueltracker.uk/api/admin/ingest
 ```
 
 ## Troubleshooting
+
+### API crash-loops with `P1012` / "Environment variable not found: DATABASE_URL"
+
+`docker logs fuel-api` shows a Prisma schema validation error and the container keeps restarting. This means `DATABASE_URL` isn't actually set — check `.env.production` has an explicit `DATABASE_URL=postgresql://fuel:<password>@fuel-db:5432/fueldb` line (see the `.env.production` example above); it is not set anywhere in `docker-compose.yml` and won't appear by itself. After fixing it: `docker compose up -d` (a restart is enough here, since only the env var changed, not the image).
+
+If the error instead says the URL "must start with the protocol `file:`" (i.e. `DATABASE_URL` *is* found, but Prisma still thinks the datasource is SQLite), the image was built before the Dockerfile's `sed -i 's/provider = "sqlite"/provider = "postgresql"/'` swap took effect (or a prior version of the Dockerfile had it in the wrong order relative to `COPY . .`, silently reverting it). Force a full rebuild with `docker compose build --no-cache api && docker compose up -d` — a plain restart won't fix a stale image.
 
 ### API won't start — "database not ready"
 

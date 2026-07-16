@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
-import { prisma } from "../db";
+import { Prisma } from "@prisma/client";
+import { prisma, isPostgres } from "../db";
 import { findCheapest } from "../services/geo";
 import { complianceFooter } from "../services/compliance";
 import { stationDto } from "../dto";
@@ -85,30 +86,38 @@ router.get("/trends", async (req: Request, res: Response) => {
   const days = Math.min(Number(req.query.days) || 30, 365);
   const since = new Date(Date.now() - days * 86_400_000);
 
-  // Prisma doesn't support date grouping natively — fetch and aggregate in JS
-  const rows = await prisma.priceHistory.findMany({
-    where: { fuelType, reportedAt: { gte: since } },
-    orderBy: { reportedAt: "asc" },
-    select: { pricePence: true, reportedAt: true },
-  });
-
-  // Group by date string
-  const byDate = new Map<string, number[]>();
-  for (const r of rows) {
-    const key = r.reportedAt.toISOString().slice(0, 10);
-    if (!byDate.has(key)) byDate.set(key, []);
-    byDate.get(key)!.push(r.pricePence);
+  // Date-group aggregation happens in SQL (Prisma's groupBy can't group by a truncated date
+  // expression) — this returns one row per day, not one row per observation, regardless of how
+  // large price_history grows.
+  interface TrendRow {
+    date: string;
+    avg_price_pence: number;
+    min_price_pence: number;
+    max_price_pence: number;
+    observations: number;
   }
+  const dateExpr = isPostgres()
+    ? Prisma.sql`to_char(reported_at, 'YYYY-MM-DD')`
+    : Prisma.sql`strftime('%Y-%m-%d', reported_at)`;
+  const rows = await prisma.$queryRaw<TrendRow[]>(Prisma.sql`
+    SELECT ${dateExpr} AS date,
+      avg(price_pence) AS avg_price_pence,
+      min(price_pence) AS min_price_pence,
+      max(price_pence) AS max_price_pence,
+      count(*) AS observations
+    FROM price_history
+    WHERE fuel_type = ${fuelType} AND reported_at >= ${since}
+    GROUP BY date
+    ORDER BY date ASC
+  `);
 
-  const trend = Array.from(byDate.entries())
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, prices]) => ({
-      date,
-      avg_price_pence: Math.round((prices.reduce((a, b) => a + b, 0) / prices.length) * 100) / 100,
-      min_price_pence: Math.min(...prices),
-      max_price_pence: Math.max(...prices),
-      observations: prices.length,
-    }));
+  const trend = rows.map((r) => ({
+    date: r.date,
+    avg_price_pence: Math.round(Number(r.avg_price_pence) * 100) / 100,
+    min_price_pence: Number(r.min_price_pence),
+    max_price_pence: Number(r.max_price_pence),
+    observations: Number(r.observations),
+  }));
 
   res.json({ trend, ...complianceFooter() });
 });

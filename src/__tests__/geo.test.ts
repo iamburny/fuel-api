@@ -1,4 +1,4 @@
-import { haversine, boundingBox, findNearbyStations, findCheapest } from "../services/geo";
+import { haversine, boundingBox, findNearbyStations, findCheapest, findStationsInBounds } from "../services/geo";
 
 vi.mock("../db", () => ({
   prisma: {
@@ -9,6 +9,10 @@ vi.mock("../db", () => ({
       findMany: vi.fn(),
     },
   },
+  // These tests mock the SQLite/dev query path (the one Prisma's mocked findMany calls
+  // represent) — isPostgres() must return false so findNearbyStations/findCheapest take that
+  // branch instead of attempting a $queryRaw call the mock doesn't provide.
+  isPostgres: () => false,
 }));
 
 import { prisma } from "../db";
@@ -153,5 +157,34 @@ describe("findCheapest", () => {
 
     expect(results.length).toBe(1);
     expect(results[0].distanceMiles).toBeNull();
+  });
+});
+
+describe("findStationsInBounds", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("queries by the exact box with a DB-side limit, no distance filtering", async () => {
+    const mockStations = [
+      { id: 1, latitude: 51.0, longitude: -0.1, prices: [] },
+      { id: 2, latitude: 51.2, longitude: -0.2, prices: [] },
+    ];
+
+    vi.mocked(prisma.station.findMany).mockResolvedValue(mockStations as any);
+
+    const results = await findStationsInBounds(50.5, 51.5, -0.5, 0.5, undefined, 50);
+
+    expect(prisma.station.findMany).toHaveBeenCalledOnce();
+    expect(prisma.station.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          latitude: { gte: 50.5, lte: 51.5 },
+          longitude: { gte: -0.5, lte: 0.5 },
+        },
+        take: 50,
+      })
+    );
+    expect(results).toEqual(mockStations);
   });
 });

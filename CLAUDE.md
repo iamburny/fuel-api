@@ -12,9 +12,10 @@ npm run db:push      # Push Prisma schema to DB (SQLite dev)
 npm run db:migrate   # Create + apply a migration (prod/Postgres workflow)
 npm run db:generate  # Regenerate Prisma client after schema.prisma edits
 npm run db:studio    # Open Prisma Studio GUI
+npm run test         # Vitest (unit tests in src/__tests__/*.test.ts)
 ```
 
-There is no test runner, linter, or formatter configured. After editing `prisma/schema.prisma`, always run `db:generate` (and `db:push` for dev) before the TypeScript will compile against the new types.
+Tests run under Vitest; `geo.test.ts` mocks Prisma and forces the SQLite code path (`isPostgres()` → false). No linter or formatter is configured. After editing `prisma/schema.prisma`, always run `db:generate` (and `db:push` for dev) before the TypeScript will compile against the new types.
 
 Manual ingestion during development: `POST /api/admin/ingest` triggers `runFullIngestion()` on demand — useful when you don't want to wait for the 5-minute cron.
 
@@ -82,9 +83,14 @@ This service operates under the Gov Fair Use Policy and that constrains the code
 - **No brand filtering or price modification.** Prices pass through unchanged with their original `reportedAt` timestamp.
 - `/api/admin/compliance/*` exposes the audit trail; `/api/discrepancy/` captures user-reported data issues.
 
-### 5. Geo queries use a bounding-box + haversine two-step
+### 5. Geo queries are dialect-aware (Postgres raw SQL vs SQLite JS)
 
-`services/geo.ts` is the only place that does distance math. Prisma/SQLite can't do haversine in SQL, so the pattern is: compute a rough lat/lng bounding box, let Prisma filter on the indexed `[latitude, longitude]`, then haversine-filter and sort in JS. `findCheapest` fetches `limit * 2` to leave headroom after the exact-radius filter. Reuse these helpers rather than rolling new distance logic in route handlers.
+`services/geo.ts` is the only place that does distance math, and it branches on `isPostgres()` (from `db.ts`, reads `DATABASE_URL`):
+
+- **Postgres (prod):** `findNearbyStations` / `findCheapest` run a single `$queryRaw` that computes haversine distance in SQL, filters by the bounding box + exact radius, and applies `ORDER BY distance LIMIT $limit` **in the DB** — then a second scoped query fetches prices only for the winning station ids (keeps the DTO-shaping code unchanged). No over-fetching.
+- **SQLite (dev):** no trig in SQL, so it keeps the bounding-box pre-filter + JS haversine/sort/slice, but caps the candidate rows fetched (`SQLITE_CANDIDATE_CAP`) so a wide radius can't pull unbounded rows. This can, in a pathological dense-area case, drop results beyond the cap — an accepted dev-only trade-off.
+
+`findStationsInBounds` (powers `GET /api/stations/bounds`) is a plain indexed bounding-box query with a DB-side `LIMIT` — no haversine on either dialect, since a box has no origin point to measure from. `/api/prices/trends` likewise groups by date in SQL (`to_char` on Postgres, `strftime` on SQLite) rather than fetching all rows and grouping in JS. Reuse these helpers rather than rolling new distance/aggregation logic in route handlers.
 
 ## Database
 

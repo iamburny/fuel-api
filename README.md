@@ -28,7 +28,8 @@ Visit `http://localhost:8000/api/health` to confirm it's running.
 
 | Endpoint | Description |
 |---|---|
-| `GET /api/stations/nearby?lat=&lng=&radius=` | Nearest stations with prices |
+| `GET /api/stations/nearby?lat=&lng=&radius=` | Nearest stations with prices, distance-sorted |
+| `GET /api/stations/bounds?minLat=&maxLat=&minLng=&maxLng=` | Stations within a map viewport box (no distance sort) |
 | `GET /api/stations/:id` | Station detail |
 | `GET /api/stations/search?q=` | Search by name/postcode/brand |
 | `GET /api/prices/cheapest?fuel_type=E10&lat=&lng=` | Cheapest nearby |
@@ -71,12 +72,15 @@ This service operates under the [Open Government Licence](https://www.nationalar
 
 ## Deployment
 
-```bash
-# Docker
-docker build -t fuel-api .
-docker run -p 8000:8000 --env-file .env fuel-api
+Production runs under Docker Compose (API + PostgreSQL + Traefik). The Dockerfile switches the Prisma provider from SQLite to PostgreSQL at build time, so a full `docker compose build` (not just a restart) is needed after changes. `.env.production` **must** define an explicit `DATABASE_URL` — it is not derived from anything in `docker-compose.yml`.
 
-# Or build and run directly
+See **[docs/deploy.md](docs/deploy.md)** for the full runbook, including the `DATABASE_URL not found` / `P1012` troubleshooting entry.
+
+```bash
+docker compose build api
+docker compose up -d
+
+# Or, for a plain local build without Docker (dev/SQLite):
 npm run build
 NODE_ENV=production node dist/index.js
 ```
@@ -91,11 +95,11 @@ src/
 ├── services/
 │   ├── fuelFinderClient.ts → OAuth token lifecycle + paginated fetch
 │   ├── ingestion.ts        → Upsert stations/prices + audit log
-│   ├── geo.ts              → Haversine distance queries
+│   ├── geo.ts              → Distance/box queries (raw-SQL haversine on Postgres, JS on SQLite)
 │   ├── auth.ts             → JWT/bcrypt + requireAuth middleware
 │   └── compliance.ts       → Response footer helper
 └── routes/
-    ├── stations.ts         → /nearby, /search, /:id
+    ├── stations.ts         → /nearby, /bounds, /search, /:id
     ├── prices.ts           → /cheapest, /averages, /history, /trends
     ├── auth.ts             → /register, /login, /fcm-token
     ├── favourites.ts       → CRUD (authenticated)

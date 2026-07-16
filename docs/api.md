@@ -10,8 +10,8 @@ All data originates from the [UK Government Fuel Finder](https://www.developer.f
 
 | Environment | Base URL |
 |---|---|
-| Local dev | `http://localhost:8000` |
-| Production | _(deployment-specific — set per client build)_ |
+| Local dev | `http://localhost:8000` (emulator → host: `http://10.0.2.2:8000`) |
+| Production | `https://api.fueltracker.uk` |
 
 All endpoints are prefixed with `/api`.
 
@@ -90,7 +90,7 @@ Find stations within a radius of a location, sorted by distance.
 | `lng` | number | _required_ | Longitude in decimal degrees |
 | `radius` | number | `10` | Miles |
 | `fuel_type` | string | _(all)_ | If provided, only the matching price row is included per station |
-| `limit` | number | `20` | Max 100 |
+| `limit` | number | `20` | Max 500 |
 
 **Response:**
 ```json
@@ -117,6 +117,21 @@ Find stations within a radius of a location, sorted by distance.
   ]
 }
 ```
+
+#### `GET /api/stations/bounds`
+
+Stations within an exact lat/lng bounding box — for loading map pins as the user pans/zooms a map viewport. Unlike `/nearby`, there is no origin point, so results are **not** distance-sorted and carry no `distance_miles`.
+
+| Query param | Type | Default | Notes |
+|---|---|---|---|
+| `minLat` | number | _required_ | South edge of the box |
+| `maxLat` | number | _required_ | North edge of the box |
+| `minLng` | number | _required_ | West edge of the box |
+| `maxLng` | number | _required_ | East edge of the box |
+| `fuel_type` | string | _(all)_ | If provided, only the matching price row is included per station |
+| `limit` | number | `100` | Max 500 |
+
+Response shape is the same as `/nearby` but without `distance_miles`. Returns `400` if any of the four bounds is missing or non-numeric.
 
 #### `GET /api/stations/search`
 
@@ -147,7 +162,7 @@ Cheapest prices for a given fuel type, optionally within a radius.
 | `lat` | number | _(optional)_ | If omitted, returns cheapest nationwide |
 | `lng` | number | _(optional)_ | Required when `lat` is provided |
 | `radius` | number | `10` | Miles — ignored if no `lat`/`lng` |
-| `limit` | number | `10` | Max 50 |
+| `limit` | number | `10` | Max 500 |
 
 **Response:**
 ```json

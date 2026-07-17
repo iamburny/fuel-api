@@ -14,6 +14,7 @@ vi.mock("../db", () => ({
     },
     priceHistory: {
       create: vi.fn().mockResolvedValue({}),
+      findMany: vi.fn().mockResolvedValue([]),
     },
   },
 }));
@@ -37,6 +38,7 @@ describe("runFullIngestion", () => {
     vi.mocked(fuelFinderClient.fetchFuelPrices).mockResolvedValue([]);
     vi.mocked(prisma.station.findMany).mockResolvedValue([]);
     vi.mocked(prisma.fuelPrice.findUnique).mockResolvedValue(null);
+    vi.mocked(prisma.priceHistory.findMany).mockResolvedValue([]);
   });
 
   it("skips permanently closed stations", async () => {
@@ -182,6 +184,85 @@ describe("runFullIngestion", () => {
           pricePence: 145,
           stationId: 1,
         }),
+      })
+    );
+  });
+
+  it("writes a same-price daily snapshot when the price is unchanged and none exists yet today", async () => {
+    vi.mocked(fuelFinderClient.fetchStations).mockResolvedValue([]);
+    vi.mocked(fuelFinderClient.fetchFuelPrices).mockResolvedValue([
+      {
+        node_id: "s1",
+        fuel_prices: [{ fuel_type: "E10", price: 145, price_last_updated: "2026-04-12T00:00:00Z" }],
+      },
+    ]);
+    vi.mocked(prisma.station.findMany).mockResolvedValue([{ id: 1, govId: "s1" } as any]);
+    vi.mocked(prisma.fuelPrice.findUnique).mockResolvedValue({
+      id: 10,
+      stationId: 1,
+      fuelType: "E10",
+      pricePence: 145,
+    } as any);
+    // No price_history row yet today for this station+fuel
+    vi.mocked(prisma.priceHistory.findMany).mockResolvedValue([]);
+
+    await runFullIngestion();
+
+    expect(prisma.fuelPrice.update).not.toHaveBeenCalled();
+    expect(prisma.priceHistory.create).toHaveBeenCalledTimes(1);
+    expect(prisma.priceHistory.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ stationId: 1, fuelType: "E10", pricePence: 145 }),
+      })
+    );
+  });
+
+  it("skips the daily snapshot when a price_history row already exists today for that station+fuel", async () => {
+    vi.mocked(fuelFinderClient.fetchStations).mockResolvedValue([]);
+    vi.mocked(fuelFinderClient.fetchFuelPrices).mockResolvedValue([
+      {
+        node_id: "s1",
+        fuel_prices: [{ fuel_type: "E10", price: 145, price_last_updated: "2026-04-12T00:00:00Z" }],
+      },
+    ]);
+    vi.mocked(prisma.station.findMany).mockResolvedValue([{ id: 1, govId: "s1" } as any]);
+    vi.mocked(prisma.fuelPrice.findUnique).mockResolvedValue({
+      id: 10,
+      stationId: 1,
+      fuelType: "E10",
+      pricePence: 145,
+    } as any);
+    vi.mocked(prisma.priceHistory.findMany).mockResolvedValue([{ stationId: 1, fuelType: "E10" } as any]);
+
+    await runFullIngestion();
+
+    expect(prisma.priceHistory.create).not.toHaveBeenCalled();
+  });
+
+  it("still records a real price change even after a same-day snapshot already exists", async () => {
+    vi.mocked(fuelFinderClient.fetchStations).mockResolvedValue([]);
+    vi.mocked(fuelFinderClient.fetchFuelPrices).mockResolvedValue([
+      {
+        node_id: "s1",
+        fuel_prices: [{ fuel_type: "E10", price: 150, price_last_updated: "2026-04-12T00:00:00Z" }],
+      },
+    ]);
+    vi.mocked(prisma.station.findMany).mockResolvedValue([{ id: 1, govId: "s1" } as any]);
+    vi.mocked(prisma.fuelPrice.findUnique).mockResolvedValue({
+      id: 10,
+      stationId: 1,
+      fuelType: "E10",
+      pricePence: 145,
+    } as any);
+    vi.mocked(prisma.priceHistory.findMany).mockResolvedValue([{ stationId: 1, fuelType: "E10" } as any]);
+
+    await runFullIngestion();
+
+    expect(prisma.fuelPrice.update).toHaveBeenCalledTimes(1);
+    expect(prisma.priceHistory.create).toHaveBeenCalledTimes(1);
+    expect(prisma.priceHistory.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ stationId: 1, fuelType: "E10", pricePence: 150 }),
       })
     );
   });

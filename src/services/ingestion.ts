@@ -99,8 +99,19 @@ async function ingestPrices(): Promise<void> {
   const govToId = new Map(stations.map((s) => [s.govId, s.id]));
 
   const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // (station, fuelType) pairs that already have a price_history row from today — from either
+  // a genuine change or an earlier snapshot this cycle — so an unchanged price only gets one
+  // extra "still this price" row per day rather than one every poll.
+  const snapshottedToday = await prisma.priceHistory.findMany({
+    where: { fetchedAt: { gte: todayStart } },
+    select: { stationId: true, fuelType: true },
+  });
+  const snapshottedTodayKeys = new Set(snapshottedToday.map((r) => `${r.stationId}:${r.fuelType}`));
+
   let newPrices = 0;
   let historyRows = 0;
+  let dailySnapshots = 0;
 
   for (const record of rawPrices) {
     const govId = record.node_id;
@@ -126,6 +137,8 @@ async function ingestPrices(): Promise<void> {
         where: { stationId_fuelType: { stationId, fuelType } },
       });
 
+      const key = `${stationId}:${fuelType}`;
+
       if (existing) {
         if (existing.pricePence !== price) {
           await prisma.fuelPrice.update({
@@ -135,7 +148,20 @@ async function ingestPrices(): Promise<void> {
           await prisma.priceHistory.create({
             data: { stationId, fuelType, pricePence: price, reportedAt, fetchedAt: now },
           });
+          snapshottedTodayKeys.add(key);
           historyRows++;
+        } else if (!snapshottedTodayKeys.has(key)) {
+          // Price hasn't moved, but nothing's been recorded for this station+fuel today yet —
+          // write a same-price snapshot so the trend chart gets at least one point per day
+          // instead of gaps as long as the price stays put. Stamped with `now`, not the
+          // (possibly weeks-old) upstream reportedAt, since this row means "still this price
+          // as of today", not a new report from the trader.
+          await prisma.priceHistory.create({
+            data: { stationId, fuelType, pricePence: price, reportedAt: now, fetchedAt: now },
+          });
+          snapshottedTodayKeys.add(key);
+          historyRows++;
+          dailySnapshots++;
         }
       } else {
         await prisma.fuelPrice.create({
@@ -144,6 +170,7 @@ async function ingestPrices(): Promise<void> {
         await prisma.priceHistory.create({
           data: { stationId, fuelType, pricePence: price, reportedAt, fetchedAt: now },
         });
+        snapshottedTodayKeys.add(key);
         newPrices++;
         historyRows++;
       }
@@ -151,7 +178,7 @@ async function ingestPrices(): Promise<void> {
   }
 
   console.log(
-    `[Ingestion] Price ingestion complete: ${rawPrices.length} raw, ${newPrices} new, ${historyRows} history rows`
+    `[Ingestion] Price ingestion complete: ${rawPrices.length} raw, ${newPrices} new, ${historyRows} history rows (${dailySnapshots} daily snapshots)`
   );
 }
 

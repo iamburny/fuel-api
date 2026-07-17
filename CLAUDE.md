@@ -27,7 +27,7 @@ This is an Express + Prisma service that ingests data from the UK Government Fue
 
 `src/index.ts` boots Express **and** a `node-cron` scheduler that runs `runFullIngestion()` every N minutes. The flow is:
 
-`fuelFinderClient.fetchStations()` → upsert `Station` by `govId` (upstream `node_id`) → `fuelFinderClient.fetchFuelPrices()` → resolve `node_id` → `station.id` via in-memory map → upsert `FuelPrice` (current) **and** append to `PriceHistory` (only when price actually changes).
+`fuelFinderClient.fetchStations()` → upsert `Station` by `govId` (upstream `node_id`) → `fuelFinderClient.fetchFuelPrices()` → resolve `node_id` → `station.id` via in-memory map → upsert `FuelPrice` (current) **and** append to `PriceHistory` on a real price change, **or** once per calendar day per (station, fuel) even when the price is unchanged — a same-price snapshot, stamped with the ingestion time (not the upstream `reportedAt`), so `/api/prices/history/*` always has at least one point per day instead of gaps as long as a price sits still. The "already snapshotted today" check queries `PriceHistory` for rows with `fetchedAt` on today's date once per ingestion cycle (not per row).
 
 `FuelPrice` has a `@@unique([stationId, fuelType])` — there is exactly one row per (station, fuel) representing the latest known price. `PriceHistory` is append-only and drives `/api/prices/history/*` and `/trends`. Any change to ingestion must preserve this split.
 

@@ -54,7 +54,11 @@ router.get("/averages", async (req: Request, res: Response) => {
 router.get("/history/:stationId", async (req: Request, res: Response) => {
   const stationId = Number(req.params.stationId);
   const fuelType = (req.query.fuel_type as string) || "E10";
-  const days = Math.min(Number(req.query.days) || 30, 365);
+  // days=all returns the station's full history, unbounded by the usual 365-day cap — history can
+  // (and often does, for a station whose price hasn't moved in a while) span further back than
+  // that, so the normal day-range options can leave genuinely-existing older points unreachable.
+  const isAllTime = req.query.days === "all";
+  const since = isAllTime ? undefined : new Date(Date.now() - Math.min(Number(req.query.days) || 30, 365) * 86_400_000);
 
   const station = await prisma.station.findUnique({ where: { id: stationId } });
   if (!station) {
@@ -62,10 +66,8 @@ router.get("/history/:stationId", async (req: Request, res: Response) => {
     return;
   }
 
-  const since = new Date(Date.now() - days * 86_400_000);
-
   const history = await prisma.priceHistory.findMany({
-    where: { stationId, fuelType, reportedAt: { gte: since } },
+    where: { stationId, fuelType, ...(since ? { reportedAt: { gte: since } } : {}) },
     orderBy: { reportedAt: "asc" },
   });
 

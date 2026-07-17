@@ -20,6 +20,14 @@ const envSchema = z.object({
   JWT_SECRET: z.string().default("CHANGE-ME-in-production"),
   JWT_EXPIRES_IN: z.string().default("24h"),
 
+  // Admin-only endpoints (ingest trigger, compliance stats/log, discrepancy list)
+  ADMIN_API_KEY: z.string().default("dev-only-admin-key-CHANGE-ME"),
+
+  // CORS: comma-separated list of allowed origins
+  CORS_ALLOWED_ORIGINS: z
+    .string()
+    .default("https://fueltracker.uk,https://www.fueltracker.uk,http://localhost:3000"),
+
   // Compliance
   DISCREPANCY_REPORT_URL: z
     .string()
@@ -43,6 +51,26 @@ function loadEnv(): Env {
         `is below the Fair Use Policy minimum of 5 minutes. Clamping to 5.`
     );
     env.POLL_INTERVAL_MINUTES = 5;
+  }
+
+  // Refuse to start in production with known-default secrets — these gate
+  // the JWT auth and the admin-only endpoints, so a default here means
+  // anyone can forge tokens or hit /api/admin/* unauthenticated.
+  if (env.NODE_ENV === "production") {
+    const weakSecrets: string[] = [];
+    if (env.JWT_SECRET === "CHANGE-ME-in-production" || env.JWT_SECRET.length < 20) {
+      weakSecrets.push("JWT_SECRET");
+    }
+    if (env.ADMIN_API_KEY === "dev-only-admin-key-CHANGE-ME" || env.ADMIN_API_KEY.length < 20) {
+      weakSecrets.push("ADMIN_API_KEY");
+    }
+    if (weakSecrets.length > 0) {
+      console.error(
+        `❌ Refusing to start in production with default/weak secret(s): ${weakSecrets.join(", ")}. ` +
+          `Set a long random value (e.g. \`openssl rand -hex 32\`) for each in your production env.`
+      );
+      process.exit(1);
+    }
   }
 
   return env;

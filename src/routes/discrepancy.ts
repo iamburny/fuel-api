@@ -1,8 +1,17 @@
 import { Router, Request, Response } from "express";
+import rateLimit from "express-rate-limit";
 import { prisma } from "../db";
 import { env } from "../config";
+import { requireAdminKey } from "../services/adminAuth";
 
 const router = Router();
+
+const submitLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 /** GET /api/discrepancy/report-url — official Gov discrepancy report link */
 router.get("/report-url", (_req: Request, res: Response) => {
@@ -13,7 +22,7 @@ router.get("/report-url", (_req: Request, res: Response) => {
 });
 
 /** POST /api/discrepancy — submit a discrepancy report */
-router.post("/", async (req: Request, res: Response) => {
+router.post("/", submitLimiter, async (req: Request, res: Response) => {
   const { station_id, fuel_type, reported_price_pence, expected_price_pence, description, reporter_email } =
     req.body;
 
@@ -51,7 +60,7 @@ router.post("/", async (req: Request, res: Response) => {
 });
 
 /** GET /api/discrepancy — list recent reports (admin) */
-router.get("/", async (req: Request, res: Response) => {
+router.get("/", requireAdminKey, async (req: Request, res: Response) => {
   const limit = Math.min(Number(req.query.limit) || 50, 200);
 
   const reports = await prisma.discrepancyReport.findMany({

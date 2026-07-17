@@ -138,7 +138,7 @@ If the API URL changes, update the `NEXT_PUBLIC_API_BASE_URL` build arg in `dock
 
 ### Connect directly
 
-Postgres is exposed on host port 5433 for debugging:
+Postgres is bound to the host's loopback interface on port 5433 for debugging (not reachable remotely — use an SSH tunnel if connecting from another machine):
 
 ```bash
 psql -h localhost -p 5433 -U fuel fueldb
@@ -166,10 +166,10 @@ docker compose up -d     # fresh DB, triggers re-ingestion
 
 ## Manual ingestion
 
-Trigger a data refresh without waiting for the cron:
+Trigger a data refresh without waiting for the cron (requires the `ADMIN_API_KEY` set in `.env.production`):
 
 ```bash
-curl -X POST https://api.fueltracker.uk/api/admin/ingest
+curl -X POST -H "X-Admin-Key: $ADMIN_API_KEY" https://api.fueltracker.uk/api/admin/ingest
 ```
 
 ## Troubleshooting

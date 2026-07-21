@@ -83,7 +83,7 @@ export async function sendPriceDropNotification(
       token: fcmToken,
       notification: {
         title: payload.stationName,
-        body: `${payload.fuelType} now ${(payload.pricePence / 100).toFixed(1)}p`,
+        body: `${payload.fuelType} now ${payload.pricePence.toFixed(1)}p`,
       },
       data: {
         station_id: String(payload.stationId),

@@ -1,5 +1,6 @@
 import { prisma } from "../db";
 import { fuelFinderClient } from "./fuelFinderClient";
+import { evaluateAlerts, PriceDrop } from "./alerts";
 
 // Fuel type identifiers are passed through from the upstream API as-is:
 // E10, E5, B7_Standard, B7_Premium, B10, HVO.
@@ -78,7 +79,7 @@ async function ingestStations(): Promise<void> {
 
 // ── Price ingestion ──────────────────────────────────
 
-async function ingestPrices(): Promise<void> {
+async function ingestPrices(): Promise<PriceDrop[]> {
   let rawPrices: any[];
   try {
     rawPrices = await fuelFinderClient.fetchFuelPrices();
@@ -112,6 +113,8 @@ async function ingestPrices(): Promise<void> {
   let newPrices = 0;
   let historyRows = 0;
   let dailySnapshots = 0;
+  // Confirmed price drops this cycle (new < old) — fanned out to area/favourite alerts after.
+  const drops: PriceDrop[] = [];
 
   for (const record of rawPrices) {
     const govId = record.node_id;
@@ -150,6 +153,9 @@ async function ingestPrices(): Promise<void> {
           });
           snapshottedTodayKeys.add(key);
           historyRows++;
+          if (price < existing.pricePence) {
+            drops.push({ stationId, fuelType, newPence: price });
+          }
         } else if (!snapshottedTodayKeys.has(key)) {
           // Price hasn't moved, but nothing's been recorded for this station+fuel today yet —
           // write a same-price snapshot so the trend chart gets at least one point per day
@@ -178,8 +184,9 @@ async function ingestPrices(): Promise<void> {
   }
 
   console.log(
-    `[Ingestion] Price ingestion complete: ${rawPrices.length} raw, ${newPrices} new, ${historyRows} history rows (${dailySnapshots} daily snapshots)`
+    `[Ingestion] Price ingestion complete: ${rawPrices.length} raw, ${newPrices} new, ${historyRows} history rows (${dailySnapshots} daily snapshots), ${drops.length} drops`
   );
+  return drops;
 }
 
 // ── Full cycle ───────────────────────────────────────
@@ -188,7 +195,11 @@ export async function runFullIngestion(): Promise<void> {
   console.log("[Ingestion] Starting full ingestion cycle");
   try {
     await ingestStations();
-    await ingestPrices();
+    const drops = await ingestPrices();
+    const { areaSent, favouriteSent } = await evaluateAlerts(drops);
+    if (areaSent || favouriteSent) {
+      console.log(`[Ingestion] Alerts sent: ${areaSent} area, ${favouriteSent} favourite`);
+    }
     console.log("[Ingestion] Cycle complete");
   } catch (err) {
     console.error("[Ingestion] Cycle failed:", err);

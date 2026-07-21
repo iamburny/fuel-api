@@ -78,9 +78,30 @@ model User {
   createdAt      DateTime  @default(now()) @map("created_at")
   lastLoginAt    DateTime? @map("last_login_at")
 
-  favourites Favourite[]
+  favourites         Favourite[]
+  alertSubscriptions AlertSubscription[]
 
   @@map("users")
+}
+
+model AlertSubscription {
+  id                Int      @id @default(autoincrement())
+  userId            Int      @map("user_id")
+  latitude          Float
+  longitude         Float
+  radiusMiles       Float    @default(10) @map("radius_miles")
+  fuelType          String   @default("E10") @map("fuel_type")
+  notify            Boolean  @default(true)
+  label             String?
+  // Last price we pushed a notification for, per subscription — throttles repeat pushes so a
+  // station sitting at a low price doesn't re-notify every ingestion cycle.
+  lastNotifiedPence Float?   @map("last_notified_pence")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([fuelType])
+  @@map("alert_subscriptions")
 }
 
 model Favourite {

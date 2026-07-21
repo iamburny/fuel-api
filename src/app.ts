@@ -11,6 +11,7 @@ import stationsRouter from "./routes/stations";
 import pricesRouter from "./routes/prices";
 import authRouter from "./routes/auth";
 import favouritesRouter from "./routes/favourites";
+import alertsRouter from "./routes/alerts";
 import discrepancyRouter from "./routes/discrepancy";
 import complianceRouter from "./routes/compliance";
 import adminRouter from "./routes/admin";
@@ -57,6 +58,7 @@ export function createApp(): Express {
   app.use("/api/prices", pricesRouter);
   app.use("/api/auth", authRouter);
   app.use("/api/favourites", favouritesRouter);
+  app.use("/api/alerts", alertsRouter);
   app.use("/api/discrepancy", discrepancyRouter);
   app.use("/api/admin/compliance", requireAdminKey, complianceRouter);
 

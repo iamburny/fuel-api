@@ -12,9 +12,9 @@ export function verifyPassword(plain: string, hashed: string): Promise<boolean> 
   return bcrypt.compare(plain, hashed);
 }
 
-export function createToken(userId: number): string {
+export function createToken(userId: number, expiresIn: string = env.JWT_EXPIRES_IN): string {
   return jwt.sign({ sub: userId }, env.JWT_SECRET as jwt.Secret, {
-    expiresIn: env.JWT_EXPIRES_IN,
+    expiresIn,
   } as jwt.SignOptions);
 }
 
@@ -42,4 +42,24 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   } catch {
     res.status(401).json({ detail: "Invalid token" });
   }
+}
+
+/**
+ * Express middleware: like {@link requireAuth}, but additionally requires the
+ * authenticated user to have the "admin" role. Returns 401 if the token is
+ * missing/invalid, 403 if the user is authenticated but not an admin.
+ *
+ * This is the JWT/account-based gate for the fuel-admin console. The older
+ * shared-secret `requireAdminKey` (services/adminAuth.ts) remains for machine
+ * callers (cron, scripts) that don't have an admin account.
+ */
+export async function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  await requireAuth(req, res, () => {
+    const user = (req as any).user;
+    if (user?.role !== "admin") {
+      res.status(403).json({ detail: "Admin access required" });
+      return;
+    }
+    next();
+  });
 }

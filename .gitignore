@@ -5,3 +5,6 @@ dist/
 .env
 .env.production
 .playwright-mcp/*
+
+# local db backups
+*.db.bak*

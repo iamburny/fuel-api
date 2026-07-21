@@ -42,7 +42,9 @@ router.post("/login", async (req: Request, res: Response) => {
     return;
   }
 
-  res.json({ access_token: createToken(user.id), token_type: "bearer" });
+  await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+
+  res.json({ access_token: createToken(user.id), token_type: "bearer", role: user.role });
 });
 
 /** POST /api/auth/fcm-token — store Firebase Cloud Messaging token */

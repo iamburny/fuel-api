@@ -70,11 +70,13 @@ model PriceHistory {
 }
 
 model User {
-  id             Int      @id @default(autoincrement())
-  email          String   @unique
-  hashedPassword String   @map("hashed_password")
-  fcmToken       String?  @map("fcm_token")
-  createdAt      DateTime @default(now()) @map("created_at")
+  id             Int       @id @default(autoincrement())
+  email          String    @unique
+  hashedPassword String    @map("hashed_password")
+  fcmToken       String?   @map("fcm_token")
+  role           String    @default("user") // "user" | "admin" — gates /api/admin/* via requireAdmin
+  createdAt      DateTime  @default(now()) @map("created_at")
+  lastLoginAt    DateTime? @map("last_login_at")
 
   favourites Favourite[]
 

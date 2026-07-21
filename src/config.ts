@@ -32,6 +32,11 @@ const envSchema = z.object({
   DISCREPANCY_REPORT_URL: z
     .string()
     .default("https://www.fuel-finder.service.gov.uk/report-discrepancy"),
+
+  // Firebase Cloud Messaging (price-drop push notifications). Either an inline
+  // service-account JSON string or a path to the JSON file. Empty = FCM disabled
+  // (send calls become no-ops that report `skipped`), so dev/test needs no secret.
+  FIREBASE_SERVICE_ACCOUNT: z.string().default(""),
 });
 
 export type Env = z.infer<typeof envSchema>;

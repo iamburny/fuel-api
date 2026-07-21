@@ -5,6 +5,7 @@ import rateLimit from "express-rate-limit";
 import { env } from "./config";
 import { runFullIngestion } from "./services/ingestion";
 import { requireAdminKey } from "./services/adminAuth";
+import { requireAdmin } from "./services/auth";
 
 import stationsRouter from "./routes/stations";
 import pricesRouter from "./routes/prices";
@@ -12,6 +13,7 @@ import authRouter from "./routes/auth";
 import favouritesRouter from "./routes/favourites";
 import discrepancyRouter from "./routes/discrepancy";
 import complianceRouter from "./routes/compliance";
+import adminRouter from "./routes/admin";
 
 /**
  * Builds a fresh Express app with all middleware and routes wired up, but no
@@ -66,11 +68,16 @@ export function createApp(): Express {
     res.json({ status: "ok", poll_interval_minutes: env.POLL_INTERVAL_MINUTES });
   });
 
-  /** Manual ingestion trigger (admin/testing) */
+  /** Manual ingestion trigger (admin/testing) — shared-key gated for machine callers */
   app.post("/api/admin/ingest", ingestLimiter, requireAdminKey, async (_req, res) => {
     await runFullIngestion();
     res.json({ status: "ingestion_complete" });
   });
+
+  // Admin/operations console API (JWT + role="admin"). Mounted after the
+  // shared-key /api/admin/compliance and /api/admin/ingest routes above so it
+  // doesn't shadow them; all other /api/admin/* paths fall through to here.
+  app.use("/api/admin", requireAdmin, adminRouter);
 
   return app;
 }

@@ -35,6 +35,11 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=8000
+    # Firebase service-account key for FCM (price-drop pushes). The file lives on the server only
+    # (gitignored, never committed) and is mounted read-only; FIREBASE_SERVICE_ACCOUNT in
+    # .env.production points at this path.
+    volumes:
+      - ./firebase-service-account.json:/run/firebase-service-account.json:ro
     ports:
       - "8200:8000"
     restart: always

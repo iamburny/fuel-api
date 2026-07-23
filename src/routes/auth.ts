@@ -1,6 +1,13 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../db";
-import { hashPassword, verifyPassword, createToken, requireAuth } from "../services/auth";
+import {
+  hashPassword,
+  verifyPassword,
+  createToken,
+  requireAuth,
+  verifyGoogleIdToken,
+} from "../services/auth";
+import { env } from "../config";
 
 const router = Router();
 
@@ -37,12 +44,66 @@ router.post("/login", async (req: Request, res: Response) => {
   }
 
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || !(await verifyPassword(password, user.hashedPassword))) {
+  // `hashedPassword` is null for Google-only accounts — they must use Google sign-in, not password.
+  if (!user || !user.hashedPassword || !(await verifyPassword(password, user.hashedPassword))) {
     res.status(401).json({ detail: "Invalid credentials" });
     return;
   }
 
   await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+
+  res.json({ access_token: createToken(user.id), token_type: "bearer", role: user.role });
+});
+
+/**
+ * POST /api/auth/google — Google Sign-In. Verifies the client's Google ID token, then finds or
+ * creates the matching user and issues the same JWT as /login, so all requireAuth routes (incl.
+ * favourites) work unchanged. Body: { id_token }.
+ */
+router.post("/google", async (req: Request, res: Response) => {
+  if (!env.GOOGLE_CLIENT_ID) {
+    res.status(503).json({ detail: "Google sign-in is not configured" });
+    return;
+  }
+
+  const idToken = req.body.id_token ?? req.body.credential;
+  if (!idToken) {
+    res.status(400).json({ detail: "id_token is required" });
+    return;
+  }
+
+  let identity;
+  try {
+    identity = await verifyGoogleIdToken(idToken);
+  } catch {
+    res.status(401).json({ detail: "Invalid Google token" });
+    return;
+  }
+  if (!identity.emailVerified) {
+    res.status(401).json({ detail: "Google email not verified" });
+    return;
+  }
+
+  // Find or create/link, in priority order: existing Google link → existing email (link it) → new.
+  let user = await prisma.user.findUnique({ where: { googleSub: identity.sub } });
+  if (!user) {
+    const byEmail = await prisma.user.findUnique({ where: { email: identity.email } });
+    user = byEmail
+      ? await prisma.user.update({
+          where: { id: byEmail.id },
+          data: { googleSub: identity.sub, lastLoginAt: new Date() },
+        })
+      : await prisma.user.create({
+          data: {
+            email: identity.email,
+            googleSub: identity.sub,
+            authProvider: "google",
+            lastLoginAt: new Date(),
+          },
+        });
+  } else {
+    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+  }
 
   res.json({ access_token: createToken(user.id), token_type: "bearer", role: user.role });
 });

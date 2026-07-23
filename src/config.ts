@@ -20,6 +20,10 @@ const envSchema = z.object({
   JWT_SECRET: z.string().default("CHANGE-ME-in-production"),
   JWT_EXPIRES_IN: z.string().default("24h"),
 
+  // Google Sign-In: the Web OAuth client ID. Used as the audience when verifying ID tokens from
+  // the Android app and the web frontend. Empty = Google login disabled (endpoint returns 503).
+  GOOGLE_CLIENT_ID: z.string().default(""),
+
   // Admin-only endpoints (ingest trigger, compliance stats/log, discrepancy list)
   ADMIN_API_KEY: z.string().default("dev-only-admin-key-CHANGE-ME"),
 

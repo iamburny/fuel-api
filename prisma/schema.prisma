@@ -72,7 +72,10 @@ model PriceHistory {
 model User {
   id             Int       @id @default(autoincrement())
   email          String    @unique
-  hashedPassword String    @map("hashed_password")
+  // Nullable: Google-SSO-only users have no password. Guard password login against null.
+  hashedPassword String?   @map("hashed_password")
+  googleSub      String?   @unique @map("google_sub") // Google subject id, set when linked/created via SSO
+  authProvider   String    @default("password") @map("auth_provider") // "password" | "google"
   fcmToken       String?   @map("fcm_token")
   role           String    @default("user") // "user" | "admin" — gates /api/admin/* via requireAdmin
   createdAt      DateTime  @default(now()) @map("created_at")

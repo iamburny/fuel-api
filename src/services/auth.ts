@@ -1,11 +1,42 @@
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { Request, Response, NextFunction } from "express";
+import { OAuth2Client } from "google-auth-library";
 import { env } from "../config";
 import { prisma } from "../db";
 
 export function hashPassword(plain: string): Promise<string> {
   return bcrypt.hash(plain, 10);
+}
+
+/** The verified claims we care about from a Google ID token. */
+export interface GoogleIdentity {
+  sub: string;
+  email: string;
+  emailVerified: boolean;
+  name?: string;
+}
+
+// Reused across requests; the audience check pins tokens to our own OAuth client.
+const googleClient = new OAuth2Client(env.GOOGLE_CLIENT_ID);
+
+/**
+ * Verifies a Google ID token against our Web OAuth client id (the audience) and returns the
+ * claims. Throws if the token is invalid/for another audience. Kept here (not inline in the route)
+ * so it can be mocked in tests.
+ */
+export async function verifyGoogleIdToken(idToken: string): Promise<GoogleIdentity> {
+  const ticket = await googleClient.verifyIdToken({ idToken, audience: env.GOOGLE_CLIENT_ID });
+  const payload = ticket.getPayload();
+  if (!payload?.sub || !payload.email) {
+    throw new Error("Google token missing required claims");
+  }
+  return {
+    sub: payload.sub,
+    email: payload.email,
+    emailVerified: payload.email_verified === true,
+    name: payload.name,
+  };
 }
 
 export function verifyPassword(plain: string, hashed: string): Promise<boolean> {

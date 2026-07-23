@@ -26,4 +26,9 @@ COPY --from=build /app/dist ./dist
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/index.js"]
+# --accept-data-loss: `db push` flags *any* new unique constraint (e.g. users.google_sub) as
+# potential data loss and otherwise refuses non-interactively. Our additive changes (new nullable
+# columns, relaxing NOT NULL) never actually drop data. Note this also lets genuinely destructive
+# schema changes apply on deploy — review schema.prisma diffs before shipping, or run such changes
+# via `prisma migrate` manually (see docs/deploy.md).
+CMD ["sh", "-c", "npx prisma db push --skip-generate --accept-data-loss && node dist/index.js"]

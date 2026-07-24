@@ -36,6 +36,7 @@ describe("POST /api/auth/google", () => {
       email: "new@example.com",
       emailVerified: true,
       name: "New User",
+      picture: "https://lh3.googleusercontent.com/a/pic",
     });
     (prisma.user.findUnique as any).mockResolvedValue(null); // no googleSub match, no email match
     (prisma.user.create as any).mockResolvedValue({ id: 7, email: "new@example.com", role: "user" });
@@ -45,9 +46,16 @@ describe("POST /api/auth/google", () => {
     expect(res.status).toBe(200);
     expect(res.body.access_token).toBeTruthy();
     expect(res.body.token_type).toBe("bearer");
+    // Captures the Google display name + avatar alongside the account link.
     expect(prisma.user.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ email: "new@example.com", googleSub: "g-123", authProvider: "google" }),
+        data: expect.objectContaining({
+          email: "new@example.com",
+          googleSub: "g-123",
+          authProvider: "google",
+          displayName: "New User",
+          avatarUrl: "https://lh3.googleusercontent.com/a/pic",
+        }),
       })
     );
   });

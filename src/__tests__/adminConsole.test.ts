@@ -109,6 +109,59 @@ describe("admin console endpoints", () => {
     expect(res.body.items[0].favourites_count).toBe(2);
   });
 
+  it("GET /api/admin/users/:id returns profile, favourites (with price) and alerts", async () => {
+    authAsAdmin();
+    vi.mocked(prisma.user.findUnique).mockResolvedValueOnce({
+      ...NON_ADMIN,
+      authProvider: "google",
+      googleSub: "g-9",
+      displayName: "Jane Doe",
+      avatarUrl: "https://lh3.googleusercontent.com/a/jane",
+      createdAt: new Date(),
+      lastLoginAt: new Date(),
+      favourites: [
+        {
+          id: 11,
+          stationId: 22,
+          fuelType: "E10",
+          notifyOnDrop: true,
+          priceThresholdPence: 140,
+          createdAt: new Date(),
+          station: {
+            id: 22,
+            name: "Didcot Superstore",
+            postcode: "OX11",
+            prices: [{ fuelType: "E10", pricePence: 138.9 }],
+          },
+        },
+      ],
+      alertSubscriptions: [
+        {
+          id: 5,
+          label: "Home",
+          fuelType: "E10",
+          radiusMiles: 10,
+          latitude: 51.6,
+          longitude: -1.2,
+          notify: true,
+          createdAt: new Date(),
+        },
+      ],
+    } as any);
+
+    const res = await request(app)
+      .get("/api/admin/users/2")
+      .set("Authorization", `Bearer ${adminToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.auth_provider).toBe("google");
+    expect(res.body.google_linked).toBe(true);
+    expect(res.body.display_name).toBe("Jane Doe");
+    expect(res.body.avatar_url).toContain("googleusercontent.com");
+    expect(res.body.favourites[0].current_price_pence).toBe(138.9);
+    expect(res.body.alert_subscriptions[0].label).toBe("Home");
+  });
+
   it("PATCH /api/admin/discrepancies/:id resolves a report", async () => {
     authAsAdmin();
     vi.mocked(prisma.discrepancyReport.update).mockResolvedValue({

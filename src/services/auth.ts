@@ -15,6 +15,7 @@ export interface GoogleIdentity {
   email: string;
   emailVerified: boolean;
   name?: string;
+  picture?: string;
 }
 
 // Reused across requests; the audience check pins tokens to our own OAuth client.
@@ -36,6 +37,7 @@ export async function verifyGoogleIdToken(idToken: string): Promise<GoogleIdenti
     email: payload.email,
     emailVerified: payload.email_verified === true,
     name: payload.name,
+    picture: payload.picture,
   };
 }
 

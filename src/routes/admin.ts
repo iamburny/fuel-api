@@ -370,6 +370,10 @@ function userDto(u: any) {
     id: u.id,
     email: u.email,
     role: u.role,
+    display_name: u.displayName ?? null,
+    avatar_url: u.avatarUrl ?? null,
+    auth_provider: u.authProvider ?? "password",
+    google_linked: Boolean(u.googleSub),
     has_fcm_token: Boolean(u.fcmToken),
     created_at: u.createdAt,
     last_login_at: u.lastLoginAt,
@@ -408,7 +412,22 @@ router.get("/users/:id", async (req: Request, res: Response) => {
 
   const user = await prisma.user.findUnique({
     where: { id },
-    include: { favourites: { include: { station: { select: { id: true, name: true, postcode: true } } } } },
+    include: {
+      favourites: {
+        orderBy: { createdAt: "desc" },
+        include: {
+          station: {
+            select: {
+              id: true,
+              name: true,
+              postcode: true,
+              prices: { select: { fuelType: true, pricePence: true } },
+            },
+          },
+        },
+      },
+      alertSubscriptions: { orderBy: { createdAt: "desc" } },
+    },
   });
   if (!user) return res.status(404).json({ detail: "User not found" });
 
@@ -418,9 +437,23 @@ router.get("/users/:id", async (req: Request, res: Response) => {
       id: f.id,
       station_id: f.stationId,
       station_name: f.station.name,
+      station_postcode: f.station.postcode,
       fuel_type: f.fuelType,
       notify_on_drop: f.notifyOnDrop,
       price_threshold_pence: f.priceThresholdPence,
+      current_price_pence:
+        f.station.prices.find((p) => p.fuelType === f.fuelType)?.pricePence ?? null,
+      created_at: f.createdAt,
+    })),
+    alert_subscriptions: user.alertSubscriptions.map((a) => ({
+      id: a.id,
+      label: a.label,
+      fuel_type: a.fuelType,
+      radius_miles: a.radiusMiles,
+      latitude: a.latitude,
+      longitude: a.longitude,
+      notify: a.notify,
+      created_at: a.createdAt,
     })),
   });
 });

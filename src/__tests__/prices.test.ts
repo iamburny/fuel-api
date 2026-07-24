@@ -8,6 +8,10 @@ vi.mock("../db", () => ({
     priceHistory: {
       findMany: vi.fn(),
     },
+    fuelPrice: {
+      aggregate: vi.fn(),
+    },
+    $queryRaw: vi.fn(),
   },
   isPostgres: () => false,
 }));
@@ -18,6 +22,8 @@ import { prisma } from "../db";
 const mockedPrisma = prisma as unknown as {
   station: { findUnique: ReturnType<typeof vi.fn> };
   priceHistory: { findMany: ReturnType<typeof vi.fn> };
+  fuelPrice: { aggregate: ReturnType<typeof vi.fn> };
+  $queryRaw: ReturnType<typeof vi.fn>;
 };
 
 describe("GET /api/prices/history/:stationId", () => {
@@ -74,5 +80,55 @@ describe("GET /api/prices/history/:stationId", () => {
       { price_pence: 155.9, reported_at: "2026-04-07T10:01:07.581Z" },
       { price_pence: 148.9, reported_at: "2026-07-13T09:45:20.472Z" },
     ]);
+  });
+});
+
+describe("GET /api/prices/heatmap", () => {
+  const app = createApp();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns per-cell averages with signed deltas vs the national average", async () => {
+    mockedPrisma.$queryRaw.mockResolvedValue([
+      { avg_price_pence: 138.0, station_count: 12, latitude: 50.7, longitude: -3.5 },
+      { avg_price_pence: 144.0, station_count: 20, latitude: 51.2, longitude: 0.8 },
+    ]);
+    mockedPrisma.fuelPrice.aggregate.mockResolvedValue({ _avg: { pricePence: 140.0 } });
+
+    const res = await request(app).get("/api/prices/heatmap?fuel_type=E10");
+
+    expect(res.status).toBe(200);
+    expect(res.body.fuel_type).toBe("E10");
+    expect(res.body.national_avg_price_pence).toBe(140.0);
+    expect(res.body.cell_size_degrees).toBe(0.4);
+    expect(res.body.cells).toEqual([
+      { avg_price_pence: 138.0, delta_pence: -2.0, delta_percent: -1.4, station_count: 12, latitude: 50.7, longitude: -3.5 },
+      { avg_price_pence: 144.0, delta_pence: 4.0, delta_percent: 2.9, station_count: 20, latitude: 51.2, longitude: 0.8 },
+    ]);
+  });
+
+  it("clamps the cell size to the 0.1–1.0 range", async () => {
+    mockedPrisma.$queryRaw.mockResolvedValue([]);
+    mockedPrisma.fuelPrice.aggregate.mockResolvedValue({ _avg: { pricePence: 140.0 } });
+
+    const res = await request(app).get("/api/prices/heatmap?cell=5");
+    expect(res.body.cell_size_degrees).toBe(1.0);
+
+    const res2 = await request(app).get("/api/prices/heatmap?cell=0.01");
+    expect(res2.body.cell_size_degrees).toBe(0.1);
+  });
+
+  it("defaults to E10 and tolerates no data", async () => {
+    mockedPrisma.$queryRaw.mockResolvedValue([]);
+    mockedPrisma.fuelPrice.aggregate.mockResolvedValue({ _avg: { pricePence: null } });
+
+    const res = await request(app).get("/api/prices/heatmap");
+
+    expect(res.status).toBe(200);
+    expect(res.body.fuel_type).toBe("E10");
+    expect(res.body.national_avg_price_pence).toBe(0);
+    expect(res.body.cells).toEqual([]);
   });
 });

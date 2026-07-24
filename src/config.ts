@@ -41,6 +41,14 @@ const envSchema = z.object({
   // service-account JSON string or a path to the JSON file. Empty = FCM disabled
   // (send calls become no-ops that report `skipped`), so dev/test needs no secret.
   FIREBASE_SERVICE_ACCOUNT: z.string().default(""),
+
+  // Transactional email (password-reset links), sent via Resend. Empty = email disabled
+  // (send calls become no-ops that report `skipped`), so dev/test needs no key.
+  RESEND_API_KEY: z.string().default(""),
+  // The From address for outgoing mail — must be on a domain verified in Resend.
+  EMAIL_FROM: z.string().default("Fuel Tracker UK <no-reply@fueltracker.uk>"),
+  // Base URL of the web frontend, used to build password-reset links in emails.
+  WEB_BASE_URL: z.string().default("https://fueltracker.uk"),
 });
 
 export type Env = z.infer<typeof envSchema>;

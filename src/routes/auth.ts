@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import crypto from "crypto";
 import { prisma } from "../db";
 import {
   hashPassword,
@@ -7,9 +8,15 @@ import {
   requireAuth,
   verifyGoogleIdToken,
 } from "../services/auth";
+import { sendPasswordResetEmail } from "../services/email";
 import { env } from "../config";
 
 const router = Router();
+
+/** sha256 hex of a value — reset tokens are stored hashed, never in the clear. */
+function sha256(value: string): string {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
 
 /** POST /api/auth/register */
 router.post("/register", async (req: Request, res: Response) => {
@@ -84,6 +91,13 @@ router.post("/google", async (req: Request, res: Response) => {
     return;
   }
 
+  // Google display name / avatar, refreshed on every sign-in. `undefined` (Prisma no-op) when the
+  // token omits a claim, so we never wipe an existing value with null.
+  const profile = {
+    displayName: identity.name ?? undefined,
+    avatarUrl: identity.picture ?? undefined,
+  };
+
   // Find or create/link, in priority order: existing Google link → existing email (link it) → new.
   let user = await prisma.user.findUnique({ where: { googleSub: identity.sub } });
   if (!user) {
@@ -91,7 +105,7 @@ router.post("/google", async (req: Request, res: Response) => {
     user = byEmail
       ? await prisma.user.update({
           where: { id: byEmail.id },
-          data: { googleSub: identity.sub, lastLoginAt: new Date() },
+          data: { googleSub: identity.sub, lastLoginAt: new Date(), ...profile },
         })
       : await prisma.user.create({
           data: {
@@ -99,13 +113,84 @@ router.post("/google", async (req: Request, res: Response) => {
             googleSub: identity.sub,
             authProvider: "google",
             lastLoginAt: new Date(),
+            ...profile,
           },
         });
   } else {
-    await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { lastLoginAt: new Date(), ...profile },
+    });
   }
 
   res.json({ access_token: createToken(user.id), token_type: "bearer", role: user.role });
+});
+
+/**
+ * POST /api/auth/forgot-password — start a password reset. Body: { email }.
+ * Always returns 200 { ok: true } regardless of whether the address is registered, so the endpoint
+ * can't be used to enumerate accounts. Only actually emails a link when the account exists and has a
+ * password identity (Google-only accounts have no password to reset).
+ */
+router.post("/forgot-password", async (req: Request, res: Response) => {
+  const email = req.body.email;
+  if (!email) {
+    res.status(400).json({ detail: "email is required" });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (user && user.hashedPassword) {
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: sha256(rawToken),
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
+      },
+    });
+    const base = env.WEB_BASE_URL.replace(/\/$/, "");
+    await sendPasswordResetEmail(user.email, `${base}/reset-password?token=${rawToken}`);
+  }
+
+  res.json({ ok: true });
+});
+
+/**
+ * POST /api/auth/reset-password — complete a password reset. Body: { token, password }.
+ * Validates the (hashed) token, sets the new password, and invalidates all of the user's
+ * outstanding reset tokens so the link is strictly single-use.
+ */
+router.post("/reset-password", async (req: Request, res: Response) => {
+  const { token, password } = req.body;
+  if (!token || !password) {
+    res.status(400).json({ detail: "token and password are required" });
+    return;
+  }
+  if (String(password).length < 8) {
+    res.status(400).json({ detail: "Password must be at least 8 characters" });
+    return;
+  }
+
+  const record = await prisma.passwordResetToken.findUnique({
+    where: { tokenHash: sha256(String(token)) },
+  });
+  if (!record || record.usedAt || record.expiresAt < new Date()) {
+    res.status(400).json({ detail: "This reset link is invalid or has expired." });
+    return;
+  }
+
+  await prisma.user.update({
+    where: { id: record.userId },
+    data: { hashedPassword: await hashPassword(password) },
+  });
+  // Mark this token (and any other outstanding ones for the user) used in one go.
+  await prisma.passwordResetToken.updateMany({
+    where: { userId: record.userId, usedAt: null },
+    data: { usedAt: new Date() },
+  });
+
+  res.json({ ok: true });
 });
 
 /** POST /api/auth/fcm-token — store Firebase Cloud Messaging token */

@@ -50,6 +50,69 @@ router.get("/averages", async (req: Request, res: Response) => {
   });
 });
 
+/**
+ * GET /api/prices/heatmap — geographic price heat map for a fuel type. Stations are bucketed into
+ * square grid cells purely by their GPS coordinates (the free-text `county` field is too dirty to
+ * group on), and each cell reports its average price and signed deviation from the national average.
+ * Query: fuel_type (default E10), cell = grid size in degrees (default 0.4, clamped 0.1–1.0).
+ *
+ * Price lives on fuel_prices and coordinates on stations, so this joins + groups in SQL (Prisma's
+ * groupBy can't bucket by a computed coordinate expression).
+ */
+router.get("/heatmap", async (req: Request, res: Response) => {
+  const fuelType = (req.query.fuel_type as string) || "E10";
+  const cell = Math.min(Math.max(Number(req.query.cell) || 0.4, 0.1), 1.0);
+
+  interface CellRow {
+    avg_price_pence: number;
+    station_count: number;
+    // Marker position = mean of the cell's stations' own coordinates (nicer than the cell corner).
+    latitude: number;
+    longitude: number;
+  }
+  // Bin each station by CAST(coord / cell AS INTEGER). The exact bin boundary (truncate vs round,
+  // which differs subtly between SQLite/Postgres) is irrelevant — binning is only for grouping, and
+  // each cell's marker is placed at the mean of its stations' real coordinates.
+  const rows = await prisma.$queryRaw<CellRow[]>(Prisma.sql`
+    SELECT avg(fp.price_pence) AS avg_price_pence,
+      count(*) AS station_count,
+      avg(s.latitude) AS latitude,
+      avg(s.longitude) AS longitude
+    FROM fuel_prices fp
+    JOIN stations s ON s.id = fp.station_id
+    WHERE fp.fuel_type = ${fuelType}
+    GROUP BY CAST(s.latitude / ${cell} AS INTEGER), CAST(s.longitude / ${cell} AS INTEGER)
+  `);
+
+  // National baseline = mean across every station reporting this fuel. Matches /averages.
+  const natAgg = await prisma.fuelPrice.aggregate({
+    where: { fuelType },
+    _avg: { pricePence: true },
+  });
+  const nationalAvg = Math.round((natAgg._avg.pricePence ?? 0) * 100) / 100;
+
+  const cells = rows.map((r) => {
+    const avg = Math.round(Number(r.avg_price_pence) * 100) / 100;
+    const delta = Math.round((avg - nationalAvg) * 100) / 100;
+    return {
+      avg_price_pence: avg,
+      delta_pence: delta,
+      delta_percent: nationalAvg ? Math.round((delta / nationalAvg) * 1000) / 10 : 0,
+      station_count: Number(r.station_count),
+      latitude: Math.round(Number(r.latitude) * 1e5) / 1e5,
+      longitude: Math.round(Number(r.longitude) * 1e5) / 1e5,
+    };
+  });
+
+  res.json({
+    fuel_type: fuelType,
+    national_avg_price_pence: nationalAvg,
+    cell_size_degrees: cell,
+    cells,
+    ...complianceFooter(),
+  });
+});
+
 /** GET /api/prices/history/:stationId — price history for a station */
 router.get("/history/:stationId", async (req: Request, res: Response) => {
   const stationId = Number(req.params.stationId);

@@ -76,15 +76,33 @@ model User {
   hashedPassword String?   @map("hashed_password")
   googleSub      String?   @unique @map("google_sub") // Google subject id, set when linked/created via SSO
   authProvider   String    @default("password") @map("auth_provider") // "password" | "google"
+  // Captured from the Google ID token on SSO (backfilled on next login). Null for password-only accounts.
+  displayName    String?   @map("display_name")
+  avatarUrl      String?   @map("avatar_url")
   fcmToken       String?   @map("fcm_token")
   role           String    @default("user") // "user" | "admin" — gates /api/admin/* via requireAdmin
   createdAt      DateTime  @default(now()) @map("created_at")
   lastLoginAt    DateTime? @map("last_login_at")
 
-  favourites         Favourite[]
-  alertSubscriptions AlertSubscription[]
+  favourites          Favourite[]
+  alertSubscriptions  AlertSubscription[]
+  passwordResetTokens PasswordResetToken[]
 
   @@map("users")
+}
+
+model PasswordResetToken {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  // sha256 of the raw token that's emailed to the user — we never store the raw token itself.
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("password_reset_tokens")
 }
 
 model AlertSubscription {
